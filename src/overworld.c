@@ -210,6 +210,10 @@ s16 gTimeUpdateCounter; // playTimeVBlanks will eventually overflow, so this is 
 // EWRAM vars
 EWRAM_DATA static u8 sObjectEventLoadFlag = 0;
 EWRAM_DATA struct WarpData gLastUsedWarp = {0};
+// peepo: monotonic map-reload generation, bumped by ApplyCurrentWarp on every warp.
+// The map editor watches it to re-pull persisted edits after a same-map warp rebuild
+// (an event signal; a value-diff of gLastUsedWarp misses identical-destination warps).
+EWRAM_DATA u32 gPeepoWarpGen = 0;
 EWRAM_DATA static struct WarpData sWarpDestination = {0};  // new warp position
 EWRAM_DATA static struct WarpData sFixedDiveWarp = {0};
 EWRAM_DATA static struct WarpData sFixedHoleWarp = {0};
@@ -596,6 +600,7 @@ void ApplyCurrentWarp(void)
     gSaveBlock1Ptr->location = sWarpDestination;
     sFixedDiveWarp = sDummyWarpData;
     sFixedHoleWarp = sDummyWarpData;
+    gPeepoWarpGen++; // peepo: signal a map reload to the map editor (see gPeepoWarpGen)
 }
 
 static void ClearDiveAndHoleWarps(void)

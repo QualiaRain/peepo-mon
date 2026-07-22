@@ -49,6 +49,7 @@ struct LinkPlayerObjectEvent
 
 // Exported RAM declarations
 extern struct WarpData gLastUsedWarp;
+extern u32 gPeepoWarpGen; // peepo: map-reload generation counter (see overworld.c / peepo_mapedit.c)
 extern struct LinkPlayerObjectEvent gLinkPlayerObjectEvents[4];
 
 extern u16 *gOverworldTilemapBuffer_Bg2;

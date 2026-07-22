@@ -3,6 +3,7 @@
 #include "peepo_mapedit.h"
 #include "fieldmap.h"
 #include "field_camera.h"
+#include "overworld.h" // gPeepoWarpGen (detect same-map warps that rebuild the map)
 #include "field_player_avatar.h"
 #include "event_object_movement.h"
 #include "event_object_lock.h"
@@ -61,6 +62,11 @@
 static EWRAM_DATA bool8 sHaveMap = FALSE;
 static EWRAM_DATA u8 sMapGroup = 0;
 static EWRAM_DATA u8 sMapNum = 0;
+// gPeepoWarpGen as of our last map (re)detection. ApplyCurrentWarp bumps that
+// counter on every warp, so it fires as an EVENT even when a warp lands back on the
+// same tile of the same map (where a value-diff of gLastUsedWarp would not change),
+// signalling a same-map rebuild that group/num alone can't see.
+static EWRAM_DATA u32 sLastWarpGen = 0;
 // The persisted-edit snapshot IS received on first entry (confirmed via server
 // logs), but an early application gets wiped when the map finishes loading/redrawing
 // at boot — so the edits only show after you re-enter. Fix: re-request the snapshot
@@ -758,14 +764,24 @@ void PeepoMapEdit_Update(void)
         return;
     g = gSaveBlock1Ptr->location.mapGroup;
     n = gSaveBlock1Ptr->location.mapNum;
-    if (!sHaveMap || g != sMapGroup || n != sMapNum)
+    // A warp reloads the current map even when it lands back on the SAME map (same
+    // group+num, different tile, or even the same tile via a self-looping warp): the
+    // layout backup is rebuilt pristine and the old object events are wiped, exactly
+    // like a cross-map warp, but g/n don't change, so the group/num check alone would
+    // miss it and this map's persisted edits would silently vanish. ApplyCurrentWarp
+    // bumps gPeepoWarpGen on every warp (menus/battles never do), so a change to the
+    // counter flags a rebuild to re-pull. A counter (event) rather than a diff of
+    // gLastUsedWarp (value), so back-to-back warps that leave the warp data
+    // byte-identical are still caught.
+    if (!sHaveMap || g != sMapGroup || n != sMapNum || sLastWarpGen != gPeepoWarpGen)
     {
-        // Entered a new map: the backup layout was rebuilt pristine, so pull this
-        // map's persisted tiles AND placed objects and re-apply them (they live
-        // only server-side). The old map's object events were wiped by the warp.
+        // Entered (or warped within) a map: the backup layout was rebuilt pristine,
+        // so pull this map's persisted tiles AND placed objects and re-apply them
+        // (they live only server-side). The old object events were wiped by the warp.
         sHaveMap = TRUE;
         sMapGroup = g;
         sMapNum = n;
+        sLastWarpGen = gPeepoWarpGen;
         ResetObjects();
         RequestSnapshot(g, n); // triggers both MAP_SNAP (tiles) + MAP_OBJ_SNAP (objects)
         sSnapReqLeft = SNAP_REQ_TOTAL; // re-request a few more times as the map settles
