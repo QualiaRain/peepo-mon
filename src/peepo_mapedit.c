@@ -3,6 +3,7 @@
 #include "peepo_mapedit.h"
 #include "fieldmap.h"
 #include "field_camera.h"
+#include "overworld.h" // CB2_Overworld (gate map-grid access to the active overworld callback)
 #include "field_player_avatar.h"
 #include "event_object_movement.h"
 #include "event_object_lock.h"
@@ -205,10 +206,14 @@ static void Task_PeepoMapEdit(u8 taskId);
 static void ClampCursor(void);
 
 // True when the player's object event is live on the field (safe to touch the
-// map grid / object-event system).
+// map grid / object-event system). Must match the overworld netcode's own
+// InOverworld gate: without the CB2_Overworld check this returns TRUE during
+// map-load / warp-transition callbacks (object event still flagged active,
+// not inBattle) when the map grid and object-event system are mid-rebuild.
 static bool8 InOverworld(void)
 {
-    return gPlayerAvatar.objectEventId < OBJECT_EVENTS_COUNT
+    return gMain.callback2 == CB2_Overworld
+        && gPlayerAvatar.objectEventId < OBJECT_EVENTS_COUNT
         && gObjectEvents[gPlayerAvatar.objectEventId].active
         && !gMain.inBattle;
 }
