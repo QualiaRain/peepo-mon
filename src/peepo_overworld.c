@@ -11,6 +11,7 @@
 #include "constants/event_objects.h"
 #include "constants/event_object_movement.h"
 #include "constants/species.h" // NUM_SPECIES / SPECIES_NONE (validate network follower species)
+#include "constants/characters.h" // CHAR_DYNAMIC / EOS (sanitize network peer names)
 #include "main.h"
 #include "save.h"
 #include "task.h"
@@ -92,7 +93,7 @@ extern const u8 PeepoFollowerScript[];
 #define POS_LEN      15    // + follower species (2) + flags (1) + accent color (2, RGB555|set)
 
 #define MAX_REMOTES 4
-#define NAME_LEN    12     // up to 10 charset bytes + terminator (+slack)
+#define NAME_LEN    PEEPO_NAME_LEN // remote display-name buffer (see peepo_overworld.h)
 #define REMOTE_LOCALID_BASE   0xF0      // object-event localIds for remote avatars (0xF0..0xF3)
 #define FOLLOWER_LOCALID_BASE 0xF4      // ... and their follower Pokémon (0xF4..0xF7)
 // Frame-based safety net only. Real leaves despawn promptly via PKT_LEAVE (a
@@ -174,6 +175,34 @@ static EWRAM_DATA struct RemotePlayer sRemotes[MAX_REMOTES] = {0};
 // Pushed from JS (PKT_SETNAME) on roster changes; zero-init means "unset"
 // (byte 0 == 0x00, which is the space char — no real name starts with a space).
 static EWRAM_DATA u8 sRemoteName[MAX_REMOTES][NAME_LEN] = {0};
+
+// Fallback for a name that filters down to nothing (an all-control-code name), so no
+// peer ever renders as a blank nameplate.
+static const u8 sDefaultPeepoName[] = _("Player");
+
+// Filter a peer-supplied name to printable glyphs before it is stored and later fed
+// to StringExpandPlaceholders (PeepoInteractText's {STR_VAR_1}). Bytes >= CHAR_DYNAMIC
+// (0xF7) are text-engine control codes, not glyphs: PLACEHOLDER_BEGIN (0xFD) recurses
+// the expander into a remote hard-lock and overruns EWRAM, and the EXT_CTRL / prompt
+// codes stall or over-read from a nameplate. Stops at an EOS in `src` (a peer can't
+// smuggle bytes past an early terminator) and truncates to the buffer.
+void SanitizePeepoName(u8 *dst, const u8 *src, u32 srcLen)
+{
+    u32 k = 0, i = 0;
+    while (i < srcLen && k < NAME_LEN - 1 && src[i] != EOS)
+    {
+        u8 c = src[i++];
+        if (c < CHAR_DYNAMIC)
+            dst[k++] = c;
+    }
+    if (k == 0)
+    {
+        StringCopy(dst, sDefaultPeepoName);
+        return;
+    }
+    dst[k] = EOS;
+}
+
 static EWRAM_DATA bool8 sHasLocalId = FALSE;
 static EWRAM_DATA u8 sLocalId = 0;
 static EWRAM_DATA u16 sLocalAccent = 0; // our chosen accent (RGB555 | 0x8000); 0 = unchosen
@@ -925,11 +954,9 @@ void PeepoOverworld_Update(void)
         }
         else if (rx[0] == PKT_SETNAME && n >= 2)
         {
-            u8 idx = rx[1] & (MAX_REMOTES - 1);
-            u32 k = 0, src = 2;
-            while (src < n && k < NAME_LEN - 1 && rx[src] != 0xFF)
-                sRemoteName[idx][k++] = rx[src++];
-            sRemoteName[idx][k] = 0xFF; // EOS terminator
+            // Filter to printable glyphs (see SanitizePeepoName): raw peer bytes reach
+            // the text engine via the nameplate, where control codes recurse or stall it.
+            SanitizePeepoName(sRemoteName[rx[1] & (MAX_REMOTES - 1)], &rx[2], n - 2);
         }
         else if (rx[0] == PKT_SETCOLOR && n >= 3)
         {
