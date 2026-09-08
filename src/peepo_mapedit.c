@@ -17,6 +17,7 @@
 #include "string_util.h"
 #include "sound.h"
 #include "main.h"
+#include "overworld.h"
 #include "field_move.h"
 #include "pokemon.h"
 #include "party_menu.h"
@@ -205,10 +206,11 @@ static void Task_PeepoMapEdit(u8 taskId);
 static void ClampCursor(void);
 
 // True when the player's object event is live on the field (safe to touch the
-// map grid / object-event system).
+// map grid / object-event system). Non-field screens can retain an active object.
 static bool8 InOverworld(void)
 {
-    return gPlayerAvatar.objectEventId < OBJECT_EVENTS_COUNT
+    return gMain.callback2 == CB2_Overworld
+        && gPlayerAvatar.objectEventId < OBJECT_EVENTS_COUNT
         && gObjectEvents[gPlayerAvatar.objectEventId].active
         && !gMain.inBattle;
 }
