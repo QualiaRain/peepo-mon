@@ -350,6 +350,10 @@ static void HandlePos(const u8 *p, u32 n)
     nx = (s16)(p[4] | (p[5] << 8));
     ny = (s16)(p[6] | (p[7] << 8));
     ndir = p[8];
+    // peepo: peers can only face cardinal directions. Never pass unchecked
+    // packet bytes to the engine's direction-to-movement lookup tables.
+    if (ndir < DIR_SOUTH || ndir > DIR_EAST)
+        ndir = DIR_SOUTH;
     r->dir = ndir;
     r->gender = p[9];
     if (n >= POS_CORE_LEN + 3) // follower tail: species (2) + flags (1)
