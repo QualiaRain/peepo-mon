@@ -1043,7 +1043,7 @@ void EndDexNavSearch(u8 taskId)
     DestroyTask(taskId);
     RemoveDexNavWindowAndGfx();
     FieldEffectStop(&gSprites[sDexNavSearchDataPtr->fldEffSpriteId], sDexNavSearchDataPtr->fldEffId);
-    Free(sDexNavSearchDataPtr);
+    FREE_AND_SET_NULL(sDexNavSearchDataPtr);
 }
 
 static void EndDexNavSearchSetupScript(const u8 *script, u8 taskId)
@@ -1076,6 +1076,13 @@ static void Task_RevealHiddenMon(u8 taskId)
 {
     struct Task *task = &gTasks[taskId];
     u16 species = sDexNavSearchDataPtr->species;
+
+    // peepo: Keep the old window and icon alive until this task runs so a map change
+    // between search and reveal can still end the search safely.
+    ClearStdWindowAndFrameToTransparent(sDexNavSearchDataPtr->windowId, FALSE);
+    CopyWindowToVram(sDexNavSearchDataPtr->windowId, 3);
+    RemoveWindow(sDexNavSearchDataPtr->windowId);
+    DestroySprite(&gSprites[sDexNavSearchDataPtr->iconSpriteId]);
 
     // remove owned icon if it exists
     if (sDexNavSearchDataPtr->ownedIconSpriteId != MAX_SPRITES)
@@ -1177,10 +1184,6 @@ static void Task_DexNavSearch(u8 taskId)
         (JOY_NEW(R_BUTTON) || (sDexNavSearchDataPtr->proximity < CREEPING_PROXIMITY)))
     {
         PlaySE(SE_DEX_SEARCH);
-        ClearStdWindowAndFrameToTransparent(sDexNavSearchDataPtr->windowId, FALSE);
-        CopyWindowToVram(sDexNavSearchDataPtr->windowId, 3);
-        RemoveWindow(sDexNavSearchDataPtr->windowId);
-        DestroySprite(&gSprites[sDexNavSearchDataPtr->iconSpriteId]);
         task->tRevealed = TRUE; //regular dexnav search
         //sDexNavSearchDataPtr->hiddenSearch = FALSE; //now its a regular dexnav search
         task->func = Task_RevealHiddenMon;
@@ -2768,10 +2771,21 @@ void TryIncrementSpeciesSearchLevel()
 
 void ResetDexNavSearch(void)
 {
+    u8 taskId;
+
     gSaveBlock3Ptr->dexNavChain = 0;    //reset dex nav chaining on new map
     VarSet(DN_VAR_STEP_COUNTER, 0); //reset hidden pokemon step counter
     if (FlagGet(DN_FLAG_SEARCHING))
-        EndDexNavSearch(FindTaskIdByFunc(Task_DexNavSearch));   //moving to new map ends dexnav search
+    {
+        taskId = FindTaskIdByFunc(Task_DexNavSearch);
+        if (taskId == TASK_NONE)
+            taskId = FindTaskIdByFunc(Task_RevealHiddenMon);
+
+        if (taskId != TASK_NONE)
+            EndDexNavSearch(taskId); // moving to a new map ends either search task
+        else
+            FlagClear(DN_FLAG_SEARCHING); // recover a saved flag without a live search
+    }
 }
 
 void IncrementDexNavChain(void)
